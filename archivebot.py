@@ -114,6 +114,30 @@ def can_query_channel(channel_id, user_id):
         )
 
 
+def get_message_context(channel_id, timestamp, n_lines):
+    query = '''
+        SELECT message, user, timestamp, channel FROM (
+            SELECT * FROM messages
+                WHERE channel = (?) AND timestamp < (?)
+                ORDER BY timestamp DESC LIMIT (?)
+        ) a
+        UNION ALL
+        SELECT message, user, timestamp, channel FROM (
+            SELECT * FROM messages
+                WHERE channel = (?) AND timestamp >= (?)
+                ORDER BY timestamp ASC LIMIT (?)
+        ) b
+        ORDER BY timestamp ASC;
+    '''
+    query_args = [
+        channel_id, timestamp, n_lines,
+        channel_id, timestamp, n_lines]
+    logger.debug(query)
+    logger.debug(query_args)
+    cursor.execute(query, query_args)
+    return cursor.fetchall()
+
+
 def handle_query(event):
     """
     Handles a DM to the bot that is requesting a search of the archives.
@@ -128,6 +152,7 @@ def handle_query(event):
         sort: Either asc if you want to search starting with the oldest messages,
             or desc if you want to start from the newest. Default asc.
         limit: The number of responses to return. Default 10.
+        context: Number of lines of context to give before and after each result
     """
     try:
         text = []
@@ -135,6 +160,7 @@ def handle_query(event):
         channel = None
         sort = None
         limit = 10
+        context = 0
 
         params = event['text'].lower().split()
         for p in params:
@@ -167,6 +193,14 @@ def handle_query(event):
                         limit = int(p[1])
                     except:
                         raise ValueError('%s not a valid number' % p[1])
+                if p[0] == 'context':
+                    try:
+                        context = int(p[1])
+                        if context < 0:
+                            raise ValueError(
+                                'context %s less than 0 not valid' % context)
+                    except:
+                        raise ValueError('%s is not a valid number' % p[1])
 
         query = 'SELECT message,user,timestamp,channel FROM messages WHERE message LIKE (?)'
         query_args=["%"+" ".join(text)+"%"]
@@ -190,11 +224,21 @@ def handle_query(event):
         res_message=None
         if res:
             logger.debug(res)
-            res_message = '\n'.join(
-                ['*<@%s>* _<!date^%s^{date_pretty} {time}|A while ago>_ _<#%s>_\n%s\n\n' % (
-                    i[1], int(float(i[2])), i[3], i[0]
-                ) for i in res if can_query_channel(i[3], event['user'])]
-            )
+            res_message = ''
+            for r in res:
+                if not can_query_channel(r[3], event['user']):
+                    pass
+                if context:
+                    r = get_message_context(r[3], r[2], context)
+                    res_message += '\n---\n'
+                else:
+                    r = [r]
+                res_message += '\n'.join(
+                    ['*<@%s>* _<!date^%s^{date_pretty} {time}|A while ago>_ _<#%s>_\n%s\n\n' % (
+                        i[1], int(float(i[2])), i[3], i[0]
+                    ) for i in r]
+                )
+                res_message += "\n"
         if res_message:
             send_message(res_message, event['channel'])
         else:
