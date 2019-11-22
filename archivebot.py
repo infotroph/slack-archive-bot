@@ -145,6 +145,7 @@ def handle_query(event):
     Usage:
 
         <query> from:<user> in:<channel> sort:asc|desc limit:<number>
+            context:<number>
 
         query: The text to search for.
         user: If you want to limit the search to one user, the username.
@@ -152,7 +153,8 @@ def handle_query(event):
         sort: Either asc if you want to search starting with the oldest messages,
             or desc if you want to start from the newest. Default asc.
         limit: The number of responses to return. Default 10.
-        context: Number of lines of context to give before and after each result
+        context: Number of lines of context to give before and after each
+            result. Default 0.
     """
     try:
         text = []
